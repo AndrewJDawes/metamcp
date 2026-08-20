@@ -1,22 +1,20 @@
 services:
   app:
     container_name: metamcp
-    image: ghcr.io/metatool-ai/metamcp:latest
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/fanywebfx/metamcp:ai-dev
+    # Use a local image when present; pull from GHCR only if missing.
+    # Override with: docker compose pull && docker compose up -d
+    pull_policy: missing
     env_file:
-      - .env
+      - path: .env
+        required: false
     ports:
       - "12008:12008"
     environment:
-      # Postgres connection details
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
-      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
-      
-      # Database configuration (composed from above vars)
-      DATABASE_URL: postgresql://${POSTGRES_USER:-metamcp_user}:${POSTGRES_PASSWORD:-m3t4mcp}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-metamcp_db}
+      DATABASE_URL: ${DATABASE_URL:-file:/data/metamcp.db}
       
       # Application URL configuration
       APP_URL: ${APP_URL:-http://localhost:12008}
@@ -158,11 +156,11 @@ services:
       #   ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: "no"
     volumes:
+      # External volume survives image rebuilds / MetaMCP upgrades.
+      # Create once: docker volume create global_metamcp_sqlite_data
+      - global_metamcp_sqlite_data:/data
       # Persist the uv cache across container recreates. Without this, every
       # `docker compose up -d`/recreate wipes the writable layer and the next
       # `uvx <pkg>@latest` spawn for each STDIO server cold-installs from
@@ -173,32 +171,10 @@ services:
     networks:
       - metamcp-network
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: metamcp-pg
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
-      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
-    ports:
-      - "${POSTGRES_EXTERNAL_PORT:-9433}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metamcp_user} -d ${POSTGRES_DB:-metamcp_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - metamcp-network
-
 volumes:
-  postgres_data:
-    driver: local
+  global_metamcp_sqlite_data:
+    external: true
+    name: global_metamcp_sqlite_data
   uv_cache:
     driver: local
 
